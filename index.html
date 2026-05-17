@@ -1452,7 +1452,7 @@
                         <div class="text-white/90 text-sm">
                             <strong class="text-purple-300">🎟️ Code d'invitation requis</strong><br>
                             Entrez votre code d'invitation personnel pour accéder à l'application.
-                            <br><span class="text-white/60 text-xs mt-1 block">⚠️ Chaque code est personnel et à usage unique.</span>
+                            <br><span class="text-white/60 text-xs mt-1 block">✅ Votre code est personnel et réutilisable.</span>
                         </div>
                     </div>
                 </div>
@@ -5095,36 +5095,23 @@ users/
                 return { valid: false, reason: "❌ Code invalide ou inexistant.\nContactez MK Crypt pour obtenir votre code." };
             }
 
-            if (entry.used) {
-                return { valid: false, reason: "⛔ Ce code a déjà été utilisé.\nContactez l'administrateur pour un nouveau code." };
-            }
-
-            // Vérifier si utilisé sur CET appareil
-            try {
-                const usedCodes = loadUsedCodes();
-                if (usedCodes[code]) {
-                    return { valid: false, reason: "⛔ Ce code a déjà été activé sur cet appareil." };
-                }
-            } catch(e) {}
-
+            // ✅ Pas de vérification "used" - le code est réutilisable à l'infini
             return { valid: true, entry, code };
         }
         function markCodeAsUsed(code, username) {
-            // Marquer dans localStorage local (cet appareil)
-            saveUsedCode(code);
-
-            // Marquer dans la base admin si disponible (device admin)
-            const data = loadInvitationCodes();
-            if (data.codes[code]) {
-                data.codes[code].used = true;
-                data.codes[code].usedAt = new Date().toISOString();
-                data.codes[code].usedBy = username || 'Inconnu';
-                saveInvitationCodes(data);
-            }
-            // Marquer en mémoire globale
-            if (window.__MK_MASTER_CODES__[code]) {
-                window.__MK_MASTER_CODES__[code].used = true;
-            }
+            // ✅ Code réutilisable - on enregistre juste les accès sans bloquer
+            try {
+                const data = loadInvitationCodes();
+                if (data.codes && data.codes[code]) {
+                    data.codes[code].lastUsedAt = new Date().toISOString();
+                    data.codes[code].useCount = (data.codes[code].useCount || 0) + 1;
+                    saveInvitationCodes(data);
+                }
+                if (window.__MK_MASTER_CODES__ && window.__MK_MASTER_CODES__[code]) {
+                    window.__MK_MASTER_CODES__[code].lastUsedAt = new Date().toISOString();
+                    window.__MK_MASTER_CODES__[code].useCount = (window.__MK_MASTER_CODES__[code].useCount || 0) + 1;
+                }
+            } catch(e) {}
         }
 
         async function loginAsUser() {
@@ -5168,7 +5155,7 @@ users/
                 document.getElementById('mainApp').classList.remove('hidden');
                 initializeApp();
                 codeInput.value = '';
-                showCustomAlert(`✅ Bienvenue ${userName} ! Connexion réussie.`, 'success');
+                showCustomAlert(`✅ Bienvenue ${userName} !`, 'success');
             } catch(error) {
                 console.error('Erreur connexion:', error);
                 if (errorText) errorText.textContent = 'Erreur de connexion. Réessayez.';
@@ -5197,16 +5184,16 @@ users/
             const codeRows = Object.entries(allCodes)
                 .sort((a,b) => new Date(b[1].createdAt||0) - new Date(a[1].createdAt||0))
                 .map(([code, info]) => `
-                <div class="flex items-center justify-between p-3 rounded-xl mb-2 ${info.used
-                    ? 'bg-red-500/10 border border-red-500/30'
+                <div class="flex items-center justify-between p-3 rounded-xl mb-2 ${info.useCount
+                    ? 'bg-blue-500/10 border border-blue-500/30'
                     : 'bg-green-500/10 border border-green-500/30'}">
                     <div class="flex-1 min-w-0">
-                        <div class="font-mono text-xs font-bold ${info.used ? 'text-red-300' : 'text-green-300'} break-all">${code}</div>
+                        <div class="font-mono text-xs font-bold ${info.useCount ? 'text-blue-300' : 'text-green-300'} break-all">${code}</div>
                         <div class="text-white/60 text-xs mt-1">
                             👤 ${info.label}
-                            ${info.used
-                                ? ' • <span class="text-red-400">Utilisé ✓</span>'
-                                : ' • <span class="text-green-400">Disponible</span>'}
+                            ${info.useCount
+                                ? ` • <span class="text-blue-400">Utilisé ${info.useCount}x</span>`
+                                : ' • <span class="text-green-400">Jamais utilisé</span>'}
                             ${info.isNew ? ' • <span class="text-yellow-400">★ Nouveau</span>' : ''}
                         </div>
                     </div>
@@ -5246,15 +5233,15 @@ users/
                     <div class="grid grid-cols-3 gap-2 mb-4 flex-shrink-0">
                         <div class="p-2 bg-green-500/20 border border-green-500/30 rounded-xl text-center">
                             <div class="text-xl font-bold text-green-400">${available}</div>
-                            <div class="text-xs text-white/50">Disponibles</div>
+                            <div class="text-xs text-white/50">Codes actifs</div>
                         </div>
-                        <div class="p-2 bg-red-500/20 border border-red-500/30 rounded-xl text-center">
-                            <div class="text-xl font-bold text-red-400">${used}</div>
-                            <div class="text-xs text-white/50">Utilisés</div>
+                        <div class="p-2 bg-blue-500/20 border border-blue-500/30 rounded-xl text-center">
+                            <div class="text-xl font-bold text-blue-400">${used}</div>
+                            <div class="text-xs text-white/50">Déjà utilisés</div>
                         </div>
                         <div class="p-2 bg-purple-500/20 border border-purple-500/30 rounded-xl text-center">
                             <div class="text-xl font-bold text-purple-400">∞</div>
-                            <div class="text-xs text-white/50">Illimités</div>
+                            <div class="text-xs text-white/50">Réutilisables</div>
                         </div>
                     </div>
 
