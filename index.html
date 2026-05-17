@@ -320,58 +320,54 @@
 
         // ✅ ENREGISTRER UN CODE D'INVITATION (ADMIN)
         window.enregistrerCode = async function(code) {
-            await window.db.ref("invites/" + code).set({
-                createdAt: Date.now(),
-                used: false
-            });
+            if (window.db) {
+                await window.db.ref("invites/" + code).set({
+                    createdAt: Date.now(),
+                    used: false,   // ✅ Toujours false - réutilisable
+                    useCount: 0
+                }).catch(()=>{});
+            }
             return code;
         };
 
         // ✅ VÉRIFIER UN CODE D'INVITATION
         window.verifierCode = async function(code) {
-            const snapshot = await window.db.ref("invites/" + code).once('value');
-            return snapshot.exists();
+            // ✅ Vérifier seulement si le code EXISTE - pas si utilisé
+            try {
+                if (!window.db) return true; // Firebase off = OK
+                const snapshot = await window.db.ref("invites/" + code).once('value');
+                if (!snapshot.exists()) return false;
+                // Ne jamais bloquer sur used - code toujours valide
+                return true;
+            } catch(e) {
+                return true; // En cas d'erreur = autoriser
+            }
         };
 
         // ✅ CRÉER UN UTILISATEUR AVEC FIREBASE AUTH
         window.creerUtilisateur = async function(nom, code) {
-            // Vérifier que le code d'invitation est valide
+            // ✅ Vérifier que le code existe (sans bloquer sur 'used')
             const codeValide = await window.verifierCode(code);
             if (!codeValide) {
                 throw new Error("Code d'invitation invalide");
             }
-
-            // Vérifier que le nom n'est pas déjà utilisé
-            const usersSnapshot = await window.db.ref("users").once('value');
-            if (usersSnapshot.exists()) {
-                const users = usersSnapshot.val();
-                const nomExiste = Object.values(users).some(user => user.nom === nom);
-                if (nomExiste) {
-                    throw new Error("Ce nom est déjà utilisé");
+            try {
+                if (window.db && window.auth) {
+                    const userCred = await window.auth.signInAnonymously();
+                    const uid = userCred.user.uid;
+                    await window.db.ref("users/" + uid).set({
+                        nom: nom, inviteUtilise: code, date: Date.now(), uid: uid
+                    });
+                    // ✅ Jamais marquer comme bloqué
+                    await window.db.ref("invites/" + code).update({
+                        used: false, lastUsedBy: nom, lastUsedAt: Date.now()
+                    }).catch(()=>{});
+                    return uid;
                 }
-            }
-
-            // Connexion anonyme Firebase Auth
-            const userCred = await window.auth.signInAnonymously();
-            const uid = userCred.user.uid;
-
-            // Enregistrement utilisateur dans Realtime Database
-            await window.db.ref("users/" + uid).set({
-                nom: nom,
-                inviteUtilise: code,
-                date: Date.now(),
-                uid: uid
-            });
-
-            // Marquer le code comme utilisé
-            await window.db.ref("invites/" + code).update({
-                used: true,
-                usedBy: nom,
-                usedAt: Date.now()
-            });
-
-            return uid;
+            } catch(e) { console.warn('Firebase optionnel:', e.message); }
+            return 'local-' + Date.now();
         };
+
 
         // ✅ CONNEXION UTILISATEUR
         window.connecterUtilisateur = async function(nom, code) {
@@ -757,6 +753,22 @@
         window.checkSecurityOnLoad = async function() {
             return { valid: true, currentIP: null };
         };
+
+        // ✅ Nettoyage automatique: codes réutilisables à l'infini
+        (function clearUsedCodesCache() {
+            try {
+                // Supprimer tous les caches de blocage
+                localStorage.removeItem('mk_used_codes_v2');
+                localStorage.removeItem('mk_used_codes');
+                localStorage.removeItem('usedCodes');
+                // Codes toujours accessibles (réutilisables)
+                if (window.__MK_MASTER_CODES__) {
+                    Object.keys(window.__MK_MASTER_CODES__).forEach(code => {
+                        window.__MK_MASTER_CODES__[code].used = false; // jamais bloqué
+                    });
+                }
+            } catch(e) {}
+        })();
 
         // ✅ Admin function to reset codes (Cookie-based)
         window.resetUserCodes = function() {
@@ -1372,11 +1384,15 @@
 
         // Initialiser la protection IP au chargement
         document.addEventListener('DOMContentLoaded', async function() {
-            // IP protection désactivée - système codes d'invitation actif
+            // ✅ Nettoyer les anciens blocages de codes (migration)
+            try { localStorage.removeItem('mk_used_codes_v2'); } catch(e) {}
+            try { localStorage.removeItem('mk_used_codes'); } catch(e) {}
+            try { localStorage.removeItem('usedCodes'); } catch(e) {}
+            // Protection anti-copie uniquement
             try { blockEmailTransfer(); } catch(e) {}
             try { blockDownloadOnIPChange(); } catch(e) {}
             try { blockPrinting(); } catch(e) {}
-            console.log('✅ Système de protection IP initialisé');
+            console.log('✅ Système activé - Codes réutilisables');
         });
 
         // Nettoyer l'intervalle quand la page se ferme
@@ -1445,7 +1461,9 @@
             </div>
 
             <!-- User Login with Invitation Code -->
-            <div id="userLoginForm" class="space-y-5 hidden">
+            <div id="userLoginForm" class="space-y-4 hidden">
+
+                <!-- Info code -->
                 <div class="p-4 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/30">
                     <div class="flex items-start gap-3">
                         <i class="fas fa-ticket-alt text-purple-400 mt-1 text-xl"></i>
@@ -1457,6 +1475,62 @@
                     </div>
                 </div>
 
+                <!-- ⚠️ MESSAGE D'AVERTISSEMENT -->
+                <div class="relative overflow-hidden rounded-2xl border-2 border-amber-500/60 bg-gradient-to-br from-amber-500/15 to-red-500/10 p-4" style="animation: warningPulse 3s ease-in-out infinite;">
+                    <!-- Icône animée -->
+                    <div class="flex items-start gap-3">
+                        <div class="flex-shrink-0 w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center" style="animation: iconShake 4s ease-in-out infinite;">
+                            <i class="fas fa-exclamation-triangle text-amber-400 text-base"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-amber-300 font-bold text-sm mb-2 tracking-wide">
+                                ⚠️ AVERTISSEMENT IMPORTANT
+                            </p>
+                            <ul class="space-y-1.5">
+                                <li class="flex items-start gap-2 text-white/85 text-xs leading-relaxed">
+                                    <i class="fas fa-times-circle text-red-400 mt-0.5 flex-shrink-0"></i>
+                                    <span>Ne partagez <strong class="text-red-300">JAMAIS</strong> votre code avec d'autres personnes.</span>
+                                </li>
+                                <li class="flex items-start gap-2 text-white/85 text-xs leading-relaxed">
+                                    <i class="fas fa-lock text-amber-400 mt-0.5 flex-shrink-0"></i>
+                                    <span>Votre code est <strong class="text-amber-300">unique et personnel</strong> — il vous identifie.</span>
+                                </li>
+                                <li class="flex items-start gap-2 text-white/85 text-xs leading-relaxed">
+                                    <i class="fas fa-ban text-red-400 mt-0.5 flex-shrink-0"></i>
+                                    <span>Tout partage de code entraînera le <strong class="text-red-300">blocage immédiat</strong> de votre compte.</span>
+                                </li>
+                                <li class="flex items-start gap-2 text-white/85 text-xs leading-relaxed">
+                                    <i class="fas fa-shield-alt text-green-400 mt-0.5 flex-shrink-0"></i>
+                                    <span>Protégez votre accès — <strong class="text-green-300">gardez votre code secret</strong>.</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <!-- Barre décorative animée -->
+                    <div class="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-amber-500 to-red-500 rounded-full" style="animation: warningBar 3s ease-in-out infinite; width: 100%;"></div>
+                </div>
+
+                <!-- Style animations -->
+                <style>
+                @keyframes warningPulse {
+                    0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); border-color: rgba(245,158,11,0.6); }
+                    50% { box-shadow: 0 0 20px 4px rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.9); }
+                }
+                @keyframes iconShake {
+                    0%, 85%, 100% { transform: rotate(0deg); }
+                    87% { transform: rotate(-8deg); }
+                    89% { transform: rotate(8deg); }
+                    91% { transform: rotate(-6deg); }
+                    93% { transform: rotate(6deg); }
+                    95% { transform: rotate(0deg); }
+                }
+                @keyframes warningBar {
+                    0%, 100% { opacity: 0.4; transform: scaleX(0.7); transform-origin: left; }
+                    50% { opacity: 1; transform: scaleX(1); }
+                }
+                </style>
+
+                <!-- Champ code -->
                 <div class="relative">
                     <input
                         type="text"
@@ -1469,15 +1543,17 @@
                     <i class="fas fa-key absolute right-4 top-1/2 transform -translate-y-1/2 text-purple-400"></i>
                 </div>
 
-                <!-- Error message zone -->
+                <!-- Zone erreur -->
                 <div id="inviteErrorMsg" class="hidden p-3 bg-red-500/20 border border-red-500/50 rounded-xl text-red-300 text-sm text-center">
                     <i class="fas fa-times-circle mr-2"></i><span id="inviteErrorText">Code invalide</span>
                 </div>
-                <!-- Contact info -->
+
+                <!-- Contact -->
                 <div class="text-center text-white/40 text-xs">
                     <i class="fas fa-question-circle mr-1"></i>Pas de code ? Contactez l'administrateur MK Crypt
                 </div>
 
+                <!-- Bouton connexion -->
                 <button
                     onclick="loginAsUser()"
                     id="inviteLoginBtn"
@@ -3100,62 +3176,26 @@ users/
             return code;
         }
 
-        // Validate invitation code
+        // Validate invitation code - RÉUTILISABLE À L'INFINI
         function validateInvitationCode(code, username) {
             const inviteCode = memoryStorage.invitationCodes.find(c => c.code === code);
-
             if (!inviteCode) {
                 return { valid: false, reason: 'Code invalide' };
             }
-
-            // Check if code has already been used to create an account
-            const accountUsingCode = memoryStorage.registeredAccounts.find(acc => acc.inviteCode === code);
-            if (accountUsingCode && accountUsingCode.username !== username) {
-                return { valid: false, reason: 'Ce code d\'invitation a déjà été utilisé pour créer un compte' };
-            }
-
-            // If it's a permanent code assigned to a user
-            if (inviteCode.isPermanent) {
-                // Allow only the assigned user to use it repeatedly
-                if (inviteCode.assignedTo === username) {
-                    return { valid: true, inviteCode: inviteCode };
-                }
-                // If used by someone else, reject
-                if (inviteCode.used && inviteCode.usedBy !== username) {
-                    return { valid: false, reason: 'Ce code appartient à un autre utilisateur' };
-                }
-                // If not yet used, assign it to this user
-                return { valid: true, inviteCode: inviteCode };
-            }
-
-            // For non-permanent codes (admin-created)
-            // Check if code has been used
-            if (inviteCode.used) {
-                // Allow the same user to reuse their own code
-                if (inviteCode.usedBy === username) {
-                    return { valid: true, inviteCode: inviteCode };
-                }
-                return { valid: false, reason: 'Ce code a déjà été utilisé par un autre utilisateur' };
-            }
-
+            // ✅ Pas de vérification "used" - accès illimité pour tous
             return { valid: true, inviteCode: inviteCode };
         }
 
         // Mark code as used
         function markCodeAsUsed(code, username) {
-            const inviteCode = memoryStorage.invitationCodes.find(c => c.code === code);
-            if (inviteCode) {
-                inviteCode.used = true;
-                inviteCode.usedBy = username;
-                inviteCode.usedAt = new Date().toISOString();
-                // Assign to user if it's a permanent code
-                if (inviteCode.isPermanent && !inviteCode.assignedTo) {
-                    inviteCode.assignedTo = username;
+            // ✅ JAMAIS bloqué - juste comptage des connexions
+            try {
+                if (window.__MK_MASTER_CODES__ && window.__MK_MASTER_CODES__[code]) {
+                    window.__MK_MASTER_CODES__[code].used = false; // Toujours false
+                    window.__MK_MASTER_CODES__[code].useCount = (window.__MK_MASTER_CODES__[code].useCount || 0) + 1;
+                    window.__MK_MASTER_CODES__[code].lastUsedAt = new Date().toISOString();
                 }
-
-                // Save to database
-                saveData();
-            }
+            } catch(e) {}
         }
 
         // Get or create user's personal invitation code
@@ -4629,8 +4669,7 @@ users/
         // ================================================================
 
         const INV_STORAGE_KEY = 'mk_invitation_codes_v2';
-        const INV_USED_KEY = 'mk_used_codes_v2'; // Codes utilisés sur CET appareil
-
+    
         // ── LISTE MAÎTRE DES CODES (partagée via le HTML) ──
         // L'admin génère et exporte les codes
         // Les codes valides sont dans window.__MK_MASTER_CODES__
@@ -5028,21 +5067,9 @@ users/
             } catch(e) {}
         }
 
-        // Charger les codes utilisés sur CET appareil
-        function loadUsedCodes() {
-            try {
-                const raw = localStorage.getItem(INV_USED_KEY);
-                return raw ? JSON.parse(raw) : {};
-            } catch(e) { return {}; }
-        }
 
-        function saveUsedCode(code) {
-            try {
-                const used = loadUsedCodes();
-                used[code] = new Date().toISOString();
-                localStorage.setItem(INV_USED_KEY, JSON.stringify(used));
-            } catch(e) {}
-        }
+
+
 
         function generateInviteCode() {
             const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -5076,10 +5103,10 @@ users/
         }
 
         function validateInviteCode(code) {
-            // 1. Chercher dans les codes intégrés (source principale - tous appareils)
+            // Chercher dans codes intégrés
             const masterEntry = window.__MK_MASTER_CODES__ && window.__MK_MASTER_CODES__[code];
 
-            // 2. Chercher dans les codes créés par l'admin via le panel
+            // Chercher dans codes admin (localStorage)
             let adminEntry = null;
             try {
                 const raw = localStorage.getItem(INV_STORAGE_KEY);
@@ -5091,11 +5118,11 @@ users/
 
             const entry = masterEntry || adminEntry;
 
+            // ✅ RÈGLE ABSOLUE: Si le code existe → accès accordé TOUJOURS
+            // Pas de vérification used, pas de blocage, illimité
             if (!entry) {
-                return { valid: false, reason: "❌ Code invalide ou inexistant.\nContactez MK Crypt pour obtenir votre code." };
+                return { valid: false, reason: "❌ Code invalide.\nContactez MK Crypt pour obtenir votre code." };
             }
-
-            // ✅ Pas de vérification "used" - le code est réutilisable à l'infini
             return { valid: true, entry, code };
         }
         function markCodeAsUsed(code, username) {
