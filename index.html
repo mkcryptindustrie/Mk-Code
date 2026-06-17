@@ -1624,7 +1624,7 @@
                 <button onclick="switchLoginMode('admin')" id="adminModeBtn" class="flex-1 p-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-semibold transition-all">
                     <i class="fas fa-crown mr-2"></i>Admin
                 </button>
-                <button onclick="switchLoginMode('user')" id="userModeBtn" class="flex-1 p-3 glass-effect text-white/70 rounded-xl font-semibold transition-all">
+                <button onclick="try{switchLoginMode('user');}catch(e){console.error('switchLoginMode failed:',e);} try{document.getElementById('adminLoginForm').classList.add('hidden');document.getElementById('userLoginForm').classList.remove('hidden');document.getElementById('ipAccessGate').classList.add('hidden');document.getElementById('loginFieldsWrap').classList.remove('hidden');document.getElementById('userModeBtn').classList.add('bg-blue-500/50','text-white');document.getElementById('userModeBtn').classList.remove('glass-effect','text-white/70');document.getElementById('adminModeBtn').classList.remove('bg-blue-500/50','text-white');document.getElementById('adminModeBtn').classList.add('glass-effect','text-white/70');}catch(e){console.error('fallback failed:',e);}" id="userModeBtn" class="flex-1 p-3 glass-effect text-white/70 rounded-xl font-semibold transition-all">
                     <i class="fas fa-user mr-2"></i>Utilisateur
                 </button>
             </div>
@@ -68826,16 +68826,4 @@ users/
             // Show selected tab
             if (tab === 'accounts') {
                 accountsTab.classList.remove('hidden');
-                accountsBtn.className = 'flex-1 p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl text-sm font-semibold transition-all';
-            } else if (tab === 'invitations') {
-                invitationsTab.classList.remove('hidden');
-                invitationsBtn.className = 'flex-1 p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl text-sm font-semibold transition-all';
-            } else if (tab === 'firebaseUsers' && firebaseUsersTab) {
-                firebaseUsersTab.classList.remove('hidden');
-                if (firebaseUsersBtn) firebaseUsersBtn.className = 'flex-1 p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl text-sm font-semibold transition-all';
-                loadFirebaseUsers();
-            }
-        }
-
-        function updateDataMenuCounts() {
-            document.ge
+                accountsBtn.className = 'flex-1 p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl text-sm font-semibold tra
