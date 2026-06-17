@@ -1905,15 +1905,11 @@
                             });
                         }
 
-                        // ── Hook sur switchLoginMode ──
-                        var _origSwitch = window.switchLoginMode;
-                        window.switchLoginMode = function(mode) {
-                            if (typeof _origSwitch === 'function') _origSwitch(mode);
-                            if (mode === 'user') {
-                                // Délai court pour laisser le DOM s'afficher
-                                setTimeout(runIPCheck, 150);
-                            }
-                        };
+                        // ── Exposer runIPCheck globalement ──
+                        // Le wrapper window.switchLoginMode (défini plus bas dans le fichier,
+                        // après switchLoginModeCore) appelle window.__runIPGateCheck directement.
+                        // Cela évite toute dépendance à l'ordre d'exécution des balises <script>.
+                        window.__runIPGateCheck = runIPCheck;
 
                         // ── Lancement au chargement si déjà sur l'onglet utilisateur ──
                         function onReady(fn) {
@@ -4145,7 +4141,7 @@ users/
         }
 
         // Login mode switching
-        async function switchLoginMode(mode) {
+        async function switchLoginModeCore(mode) {
             const adminForm = document.getElementById('adminLoginForm');
             const userForm = document.getElementById('userLoginForm');
             const adminBtn = document.getElementById('adminModeBtn');
@@ -4177,6 +4173,14 @@ users/
                 }
             }
         }
+
+        // Wrapper final — point d'entrée unique, ne peut pas être écrasé par un autre script
+        window.switchLoginMode = async function(mode) {
+            await switchLoginModeCore(mode);
+            if (mode === 'user' && typeof window.__runIPGateCheck === 'function') {
+                setTimeout(window.__runIPGateCheck, 150);
+            }
+        };
 
         // Admin login
         function loginAsAdmin() {
@@ -68834,7 +68838,4 @@ users/
                 accountsTab.classList.remove('hidden');
                 accountsBtn.className = 'flex-1 p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl text-sm font-semibold transition-all';
             } else if (tab === 'invitations') {
-                invitationsTab.classList.remove('hidden');
-                invitationsBtn.className = 'flex-1 p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl text-sm font-semibold transition-all';
-            } else if (tab === 'firebaseUsers' && firebaseUsersTab) {
-      
+                invitationsTab.cl
