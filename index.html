@@ -1753,12 +1753,11 @@
                         var IP_STORE_KEY = 'mk_bound_ip_v1';
                         var SESSION_KEY  = 'mk_ip_gate_ok';
 
-                        // ── Fetch IP: cascade de 3 sources sans AbortSignal (Android < 99) ──
+                        // ── Fetch IP: cascade de 2 sources, timeout court (UX rapide) ──
                         function fetchCurrentIP() {
                             var sources = [
                                 'https://api.ipify.org?format=json',
-                                'https://api64.ipify.org?format=json',
-                                'https://api.my-ip.io/v1/ip.json'
+                                'https://api64.ipify.org?format=json'
                             ];
                             var idx = 0;
                             function tryNext() {
@@ -1768,14 +1767,13 @@
                                     var done = false;
                                     var timer = setTimeout(function() {
                                         if (!done) { done = true; resolve(tryNext()); }
-                                    }, 5000);
+                                    }, 2000);
                                     fetch(url)
                                         .then(function(r) { return r.json(); })
                                         .then(function(d) {
                                             clearTimeout(timer);
                                             if (!done) {
                                                 done = true;
-                                                // ipify → d.ip | my-ip.io → d.ip
                                                 resolve(d.ip || null);
                                             }
                                         })
@@ -1862,21 +1860,17 @@
 
                         // ── Vérification IP ──
                         function runIPCheck() {
-                            if (getSession() === '1') { hideGate(); return; }
+                            // ✅ Afficher IMMÉDIATEMENT les champs (pas d'attente réseau visible)
+                            // Si un gate est nécessaire, il remplacera l'affichage une fois la vérif terminée.
+                            hideGate();
 
-                            // Spinner pendant la vérification
-                            var gate   = document.getElementById('ipAccessGate');
-                            var fields = document.getElementById('loginFieldsWrap');
-                            // masquer les deux pendant la vérification réseau
-                            if (fields) { fields.style.opacity = '0.3'; fields.style.pointerEvents = 'none'; }
+                            if (getSession() === '1') { return; }
 
+                            // Vérification IP en arrière-plan, sans bloquer l'affichage
                             fetchCurrentIP().then(function(currentIP) {
-                                if (fields) { fields.style.opacity = ''; fields.style.pointerEvents = ''; }
-
                                 if (!currentIP) {
                                     // Pas de réseau ou API bloquée → on laisse passer (pas de blocage)
                                     setSession();
-                                    hideGate();
                                     return;
                                 }
 
@@ -1886,22 +1880,18 @@
                                     // Première visite : enregistrer l'IP, pas de gate
                                     storeEntry(currentIP);
                                     setSession();
-                                    hideGate();
                                     return;
                                 }
 
                                 if (entry.ip === currentIP) {
                                     // Même IP → accès direct
                                     setSession();
-                                    hideGate();
                                 } else {
-                                    // IP différente → afficher le gate
+                                    // IP différente → afficher le gate (remplace les champs)
                                     showGate();
                                 }
                             }).catch(function() {
-                                if (fields) { fields.style.opacity = ''; fields.style.pointerEvents = ''; }
                                 setSession();
-                                hideGate();
                             });
                         }
 
@@ -68838,4 +68828,14 @@ users/
                 accountsTab.classList.remove('hidden');
                 accountsBtn.className = 'flex-1 p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl text-sm font-semibold transition-all';
             } else if (tab === 'invitations') {
-                invitationsTab.cl
+                invitationsTab.classList.remove('hidden');
+                invitationsBtn.className = 'flex-1 p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl text-sm font-semibold transition-all';
+            } else if (tab === 'firebaseUsers' && firebaseUsersTab) {
+                firebaseUsersTab.classList.remove('hidden');
+                if (firebaseUsersBtn) firebaseUsersBtn.className = 'flex-1 p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl text-sm font-semibold transition-all';
+                loadFirebaseUsers();
+            }
+        }
+
+        function updateDataMenuCounts() {
+            document.ge
